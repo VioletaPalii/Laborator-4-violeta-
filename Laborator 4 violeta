@@ -1,0 +1,88 @@
+from flask import Flask, request, jsonify
+import sqlite3
+import hashlib
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+
+app = Flask(__name__)
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def send_email(email, new_password):
+    sender_email = "violetapalii029@gmail.com"
+    password = "xxxxxxxxxxx"
+
+    msg = MIMEText(f"Parola ta nouă este: {new_password}")
+    msg['Subject'] = 'Resetare Parolă'
+    msg['From'] = sender_email
+    msg['To'] = email
+
+    server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+    server.login(sender_email, password)
+    server.sendmail(sender_email, email, msg.as_string())
+    server.quit()
+
+@app.route('/home')
+def home():
+    return "Bine ai venit!"
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data['email']
+    password = data['password']
+
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE email=? AND password=?", (email, hash_password(password)))
+    user = c.fetchone()
+    conn.close()
+
+    if user:
+        return "Autentificare reușită!"
+    else:
+        return "Email sau parolă incorectă.", 401
+
+@app.route('/signup', methods=['POST'])
+def signup():
+    data = request.get_json()
+    email = data['email']
+    password = data['password']
+
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hash_password(password)))
+    conn.commit()
+    conn.close()
+
+    return "Înregistrare reușită!"
+
+@app.route('/reset_password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
+    email = data['email']
+    new_password = ''.join(secrets.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890') for i in range(10))
+
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute("UPDATE users SET password=? WHERE email=?", (hash_password(new_password), email))
+    conn.commit()
+    conn.close()
+
+    send_email(email, new_password)
+
+    return "Parola nouă a fost trimisă pe email."
+
+if __name__ == '__main__':
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 email TEXT UNIQUE NOT NULL,
+                 password TEXT NOT NULL)''')
+    conn.commit()
+    conn.close()
+
+    app.run(debug=True)
